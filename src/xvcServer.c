@@ -116,9 +116,8 @@ int handle_data(int fd) {
 int main(int argc, char **argv) {
   int i;
   int s;
-  int c; 
-  int fd_uio;
-   
+  int c;
+
   struct sockaddr_in address;
    
 

@@ -30,16 +30,18 @@ unsigned int ftdi_verbosity;
 struct ftdi_context ftdi;
 
 /** \brief Read bytes from the FTDI device, possibly in multiple chunks. */
-void ftdi_xvc_read_bytes(unsigned int len, unsigned char *buf) {
-  int read, to_read, last_read;
-  to_read = len;
-  read = 0;
-  last_read = ftdi_read_data(&ftdi, buf, to_read);
-  if (last_read > 0) read += last_read;
-  while (read < to_read) {
-    last_read = ftdi_read_data(&ftdi, buf+read, to_read-read);
-    if (last_read > 0) read += last_read;
+int ftdi_xvc_read_bytes(unsigned int len, unsigned char *buf) {
+  int bytes_read = 0;
+  int to_read = len;
+  while (bytes_read < to_read) {
+    int result = ftdi_read_data(&ftdi, buf + bytes_read, to_read - bytes_read);
+    if (result < 0) {
+      fprintf(stderr, "xvcd: %s : read error: %s\n", __FUNCTION__, ftdi_get_error_string(&ftdi));
+      return -1;
+    }
+    bytes_read += result;
   }
+  return bytes_read;
 }
 
 
@@ -58,15 +60,16 @@ void ftdi_xvc_init(unsigned int verbosity)
 }
 
 /** \brief Open the FTDI device. */
-int ftdi_xvc_open_device(int vendor, int product) 
+int ftdi_xvc_open_device(int vendor, int product)
 {
-  if (ftdi_usb_open_desc(&ftdi, vendor, product, NULL, NULL) < 0) 
+  // ftdi_set_interface must be called before ftdi_usb_open
+  ftdi_set_interface(&ftdi, INTERFACE_A);
+  if (ftdi_usb_open_desc(&ftdi, vendor, product, NULL, NULL) < 0)
     {
       fprintf(stderr, "xvcd: %s : can't open device.\n", __FUNCTION__);
       return -1;
     }
   ftdi_usb_reset(&ftdi);
-  ftdi_set_interface(&ftdi, INTERFACE_A);
   ftdi_set_latency_timer(&ftdi, 1);
   return 0;
 }
@@ -89,7 +92,9 @@ int ftdi_xvc_init_mpsse() {
   };   
   ftdi_set_bitmode(&ftdi, 0x0B, BITMODE_BITBANG);
   ftdi_set_bitmode(&ftdi, 0x0B, BITMODE_MPSSE);
-  while (res = ftdi_read_data(&ftdi, &byte, 1));
+  // Flush any pending data from the device
+  while ((res = ftdi_read_data(&ftdi, &byte, 1)) > 0)
+    ;
   if (ftdi_write_data(&ftdi, buf, 7) != 7) 
     {
       fprintf(stderr, "xvcd: %s : FTDI initialization failed.\n", __FUNCTION__);
