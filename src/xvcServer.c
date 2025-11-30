@@ -256,12 +256,11 @@ int main(int argc, char **argv) {
 
 	  newfd = accept(s, (struct sockaddr*) &address, &nsize);
 
-	  //               if (verbose)
-	  printf("connection accepted - fd %d\n", newfd);
 	  if (newfd < 0) {
 	    perror("accept");
 	  } else {
-	    printf("setting TCP_NODELAY to 1\n");
+	    if (verbose)
+	      printf("connection accepted - fd %d\n", newfd);
 	    int flag = 1;
 	    int optResult = setsockopt(newfd,
 				       IPPROTO_TCP,
