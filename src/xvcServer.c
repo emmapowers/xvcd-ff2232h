@@ -135,9 +135,8 @@ int handle_data(int fd) {
     if (write(fd,result, nr_bytes) != nr_bytes) {
       perror("write");
       return 1;
-    }   
+    }
   } while (1);
-  /* Note: Need to fix JTAG state updates, until then no exit is allowed */
   return 0;
 }
 
