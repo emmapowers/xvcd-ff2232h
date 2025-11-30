@@ -22,12 +22,23 @@
 #include <sys/types.h>
 #include <ftdi.h>
 
-unsigned int ftdi_verbosity;
+static unsigned int ftdi_verbosity;
+static struct ftdi_context ftdi;
+static enum ftdi_interface ftdi_iface = INTERFACE_A;
+
 #define DEBUGCOND(lvl) (lvl<=ftdi_verbosity)
 #define DEBUG(lvl,...) if (lvl<=ftdi_verbosity) printf(__VA_ARGS__)
 #define DEBUGPRINTF(...) printf(__VA_ARGS__)
 
-struct ftdi_context ftdi;
+// Base clock for FT2232H in MPSSE mode is 60 MHz
+#define FTDI_BASE_CLOCK_HZ 60000000
+
+/** \brief Calculate TCK divisor for a given frequency in Hz. */
+static unsigned int calc_tck_divisor(unsigned int freq_hz) {
+  if (freq_hz >= FTDI_BASE_CLOCK_HZ / 2)
+    return 0;
+  return (FTDI_BASE_CLOCK_HZ / (2 * freq_hz)) - 1;
+}
 
 /** \brief Read bytes from the FTDI device, possibly in multiple chunks. */
 int ftdi_xvc_read_bytes(unsigned int len, unsigned char *buf) {
@@ -59,14 +70,20 @@ void ftdi_xvc_init(unsigned int verbosity)
   ftdi_verbosity = verbosity;
 }
 
-/** \brief Open the FTDI device. */
-int ftdi_xvc_open_device(int vendor, int product)
+/** \brief Open the FTDI device.
+ *  \param vendor USB vendor ID
+ *  \param product USB product ID
+ *  \param serial USB serial number string (NULL for any)
+ *  \param iface FTDI interface (INTERFACE_A, INTERFACE_B, etc.)
+ */
+int ftdi_xvc_open_device(int vendor, int product, const char *serial, enum ftdi_interface iface)
 {
+  ftdi_iface = iface;
   // ftdi_set_interface must be called before ftdi_usb_open
-  ftdi_set_interface(&ftdi, INTERFACE_A);
-  if (ftdi_usb_open_desc(&ftdi, vendor, product, NULL, NULL) < 0)
+  ftdi_set_interface(&ftdi, ftdi_iface);
+  if (ftdi_usb_open_desc(&ftdi, vendor, product, NULL, serial) < 0)
     {
-      fprintf(stderr, "xvcd: %s : can't open device.\n", __FUNCTION__);
+      fprintf(stderr, "xvcd: %s : can't open device: %s\n", __FUNCTION__, ftdi_get_error_string(&ftdi));
       return -1;
     }
   ftdi_usb_reset(&ftdi);
@@ -80,22 +97,25 @@ struct ftdi_context *ftdi_xvc_get_context()
   return &ftdi;
 }
 
-/** \brief Initialize the MPSSE engine on the FTDI device. */
-int ftdi_xvc_init_mpsse() {
+/** \brief Initialize the MPSSE engine on the FTDI device.
+ *  \param freq_hz Initial TCK frequency in Hz
+ */
+int ftdi_xvc_init_mpsse(unsigned int freq_hz) {
   int res;
   unsigned char byte;
+  unsigned int divisor = calc_tck_divisor(freq_hz);
 
   unsigned char buf[7] = {
     SET_BITS_LOW, 0x08, 0x0B,  // Set TMS high, TCK/TDI/TMS as outputs.
-    TCK_DIVISOR, 0x01, 0x00,   // Set TCK clock rate = 6 MHz.
+    TCK_DIVISOR, divisor & 0xff, (divisor >> 8) & 0xff,
     SEND_IMMEDIATE
-  };   
+  };
   ftdi_set_bitmode(&ftdi, 0x0B, BITMODE_BITBANG);
   ftdi_set_bitmode(&ftdi, 0x0B, BITMODE_MPSSE);
   // Flush any pending data from the device
   while ((res = ftdi_read_data(&ftdi, &byte, 1)) > 0)
     ;
-  if (ftdi_write_data(&ftdi, buf, 7) != 7) 
+  if (ftdi_write_data(&ftdi, buf, 7) != 7)
     {
       fprintf(stderr, "xvcd: %s : FTDI initialization failed.\n", __FUNCTION__);
       return -1;

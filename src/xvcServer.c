@@ -28,11 +28,24 @@
 
 #include "ftdi_xvc_core.h"
 
-#define VENDOR 0x0403
-#define PRODUCT 0x6010
-#define MAP_SIZE      0x10000
+#define DEFAULT_VENDOR  0x0403
+#define DEFAULT_PRODUCT 0x6010
+#define DEFAULT_PORT    2542
+#define DEFAULT_CLOCK   6000000  // 6 MHz
 
 static int verbose = 0;
+
+static void print_usage(const char *prog) {
+  fprintf(stderr, "Usage: %s [options]\n", prog);
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  -v            Verbose output\n");
+  fprintf(stderr, "  -p <port>     TCP port (default: %d)\n", DEFAULT_PORT);
+  fprintf(stderr, "  -V <vendor>   USB vendor ID in hex (default: 0x%04x)\n", DEFAULT_VENDOR);
+  fprintf(stderr, "  -P <product>  USB product ID in hex (default: 0x%04x)\n", DEFAULT_PRODUCT);
+  fprintf(stderr, "  -s <serial>   USB device serial number\n");
+  fprintf(stderr, "  -c <clock>    TCK clock in MHz (default: 6)\n");
+  fprintf(stderr, "  -i <iface>    FTDI interface: A, B, C, or D (default: A)\n");
+}
 
 static int sread(int fd, void *target, int len) {
   unsigned char *t = target;
@@ -118,43 +131,79 @@ int main(int argc, char **argv) {
   int s;
   int c;
 
-  struct sockaddr_in address;
-   
+  // Configurable options with defaults
+  int port = DEFAULT_PORT;
+  int vendor = DEFAULT_VENDOR;
+  int product = DEFAULT_PRODUCT;
+  const char *serial = NULL;
+  unsigned int clock_hz = DEFAULT_CLOCK;
+  enum ftdi_interface iface = INTERFACE_A;
 
+  struct sockaddr_in address;
 
   opterr = 0;
 
-  while ((c = getopt(argc, argv, "v")) != -1)
+  while ((c = getopt(argc, argv, "vp:V:P:s:c:i:h")) != -1) {
     switch (c) {
     case 'v':
       verbose = 1;
       break;
+    case 'p':
+      port = atoi(optarg);
+      break;
+    case 'V':
+      vendor = strtol(optarg, NULL, 0);
+      break;
+    case 'P':
+      product = strtol(optarg, NULL, 0);
+      break;
+    case 's':
+      serial = optarg;
+      break;
+    case 'c':
+      clock_hz = (unsigned int)(atof(optarg) * 1000000);
+      break;
+    case 'i':
+      switch (optarg[0]) {
+      case 'A': case 'a': iface = INTERFACE_A; break;
+      case 'B': case 'b': iface = INTERFACE_B; break;
+      case 'C': case 'c': iface = INTERFACE_C; break;
+      case 'D': case 'd': iface = INTERFACE_D; break;
+      default:
+        fprintf(stderr, "Invalid interface: %s\n", optarg);
+        return 1;
+      }
+      break;
+    case 'h':
+      print_usage(*argv);
+      return 0;
     case '?':
-      fprintf(stderr, "usage: %s [-v]\n", *argv);
+      print_usage(*argv);
       return 1;
     }
+  }
+
   ftdi_xvc_init(verbose);
-  
-  if (ftdi_xvc_open_device(VENDOR, PRODUCT) < 0) {
+
+  if (ftdi_xvc_open_device(vendor, product, serial, iface) < 0) {
     return 1;
   }
-  
-  if (ftdi_xvc_init_mpsse() < 0) 
+
+  if (ftdi_xvc_init_mpsse(clock_hz) < 0)
     return 1;
 
   s = socket(AF_INET, SOCK_STREAM, 0);
-               
+
   if (s < 0) {
     perror("socket");
     return 1;
   }
 
-   
   i = 1;
   setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &i, sizeof i);
 
   address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(2542);
+  address.sin_port = htons(port);
   address.sin_family = AF_INET;
 
   if (bind(s, (struct sockaddr*) &address, sizeof(address)) < 0) {
