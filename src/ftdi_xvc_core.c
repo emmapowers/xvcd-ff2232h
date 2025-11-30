@@ -256,7 +256,9 @@ int ftdi_xvc_shift_command(unsigned int len,
       return 1;
     }
     //Read the response
-    ftdi_xvc_read_bytes(rd_len, ftdi_res);
+    if (ftdi_xvc_read_bytes(rd_len, ftdi_res) < 0) {
+      return 1;
+    }
     //Unpack the response basing on the read descriptors
     //Please note, that the responses do not always come as full bits!
     int rd_byte_pos = 0;

@@ -32,6 +32,7 @@
 #define DEFAULT_PRODUCT 0x6010
 #define DEFAULT_PORT    2542
 #define DEFAULT_CLOCK   6000000  // 6 MHz
+#define MAX_VECTOR_LEN  32768    // Maximum shift length in bits
 
 static int verbose = 0;
 
@@ -124,7 +125,10 @@ int handle_data(int fd) {
     /* Here we go only during the shift command */
     if (sread(fd, blen, 4) != 1) return 1;
     len = blen[0]+256*(blen[1]+256*(blen[2]+256*blen[3]));
-    //fprintf(stderr,"%d\n",len);
+    if (len > MAX_VECTOR_LEN) {
+      fprintf(stderr, "shift length %d exceeds maximum %d\n", len, MAX_VECTOR_LEN);
+      return 1;
+    }
     nr_bytes = (len + 7)/8;
     if (sread(fd, buffer, nr_bytes * 2) != 1) return 1;
     if (ftdi_xvc_shift_command(len, buffer, result)) return 1;
