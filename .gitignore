@@ -1,0 +1,8 @@
+# Build directory
+build/
+
+# Object files
+*.o
+
+# Binary
+xvcd-ft2232h

@@ -21,7 +21,6 @@
 #include <string.h>
 #include <sys/types.h>
 #include <ftdi.h>
-#include <usb.h>
 
 unsigned int ftdi_verbosity;
 #define DEBUGCOND(lvl) (lvl<=ftdi_verbosity)
