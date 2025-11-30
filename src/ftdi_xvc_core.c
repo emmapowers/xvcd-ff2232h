@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <ftdi.h>
 
@@ -95,6 +96,34 @@ int ftdi_xvc_open_device(int vendor, int product, const char *serial, enum ftdi_
 struct ftdi_context *ftdi_xvc_get_context() 
 {
   return &ftdi;
+}
+
+/** \brief Set TCK period dynamically.
+ *  \param period_ns Requested period in nanoseconds
+ *  \return Actual achieved period in nanoseconds, or 0 on error
+ */
+uint32_t ftdi_xvc_set_tck_period(uint32_t period_ns) {
+  // Convert period to frequency: freq = 1e9 / period_ns
+  unsigned int freq_hz = (period_ns > 0) ? (1000000000U / period_ns) : FTDI_BASE_CLOCK_HZ;
+  unsigned int divisor = calc_tck_divisor(freq_hz);
+
+  // Clamp divisor to valid range (0-65535)
+  if (divisor > 65535)
+    divisor = 65535;
+
+  unsigned char buf[3] = {
+    TCK_DIVISOR, divisor & 0xff, (divisor >> 8) & 0xff
+  };
+
+  if (ftdi_write_data(&ftdi, buf, 3) != 3) {
+    fprintf(stderr, "xvcd: %s : failed to set TCK divisor\n", __FUNCTION__);
+    return 0;
+  }
+
+  // Calculate actual achieved period: period = 1e9 / actual_freq
+  // actual_freq = FTDI_BASE_CLOCK_HZ / (2 * (divisor + 1))
+  unsigned int actual_freq = FTDI_BASE_CLOCK_HZ / (2 * (divisor + 1));
+  return 1000000000U / actual_freq;
 }
 
 /** \brief Initialize the MPSSE engine on the FTDI device.

@@ -89,14 +89,25 @@ int handle_data(int fd) {
     } else if (memcmp(cmd, "se", 2) == 0) {
       if (sread(fd, cmd, 9) != 1)
 	return 1;
-      memcpy(result, cmd + 5, 4);
+      // Extract requested period (little-endian uint32 at cmd+5)
+      uint32_t requested_period = (unsigned char)cmd[5] |
+                                  ((unsigned char)cmd[6] << 8) |
+                                  ((unsigned char)cmd[7] << 16) |
+                                  ((unsigned char)cmd[8] << 24);
+      // Set the TCK period and get actual achieved period
+      uint32_t actual_period = ftdi_xvc_set_tck_period(requested_period);
+      // Send back actual period (little-endian)
+      result[0] = actual_period & 0xff;
+      result[1] = (actual_period >> 8) & 0xff;
+      result[2] = (actual_period >> 16) & 0xff;
+      result[3] = (actual_period >> 24) & 0xff;
       if (write(fd, result, 4) != 4) {
 	perror("write");
 	return 1;
       }
       if (verbose) {
 	printf("%u : Received command: 'settck'\n", (int)time(NULL));
-	printf("\t Replied with '%.*s'\n\n", 4, cmd + 5);
+	printf("\t Requested period: %u ns, actual: %u ns\n", requested_period, actual_period);
       }
       break;
     } else if (memcmp(cmd, "sh", 2) == 0) {
